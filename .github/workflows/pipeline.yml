@@ -2,7 +2,7 @@
 # GitHub Actions Workflow – bac-lab
 ###############################################################################
 
-name: Deploy Branch as Code
+name: Deploy Small Branch as Code
 
 on:
   workflow_dispatch:
@@ -12,6 +12,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
+# Below usernames and passwords are given as example only. 
+# In the production environment, please make sure to use strong, unique credentials 
+# and store them securely (e.g. GitHub Secrets, HashiCorp Vault, etc.). 
+# Avoid hardcoding sensitive information directly in the workflow file.
   org_admin:       "admin"
   org_admin_email: "admin-branch@netascode.cisco.com"
   v3_auth_pass:                       "Cisco12345"
@@ -42,15 +46,6 @@ env:
   # BRANCH2_MS_SERIAL         – Branch 2 MS switch serial
   # BRANCH2_CW_SERIAL         – Branch 2 CW access point serial
 
-  # Pass !env-referenced vars so the NAC YAML engine can resolve them
-  # org_name:              ${{ secrets.ORG_NAME }}
-  # vpn_hub_network_name:  ${{ secrets.VPN_HUB_NETWORK_NAME }}
-  # branch1_mx_serial:     ${{ secrets.BRANCH1_MX_SERIAL }}
-  # branch1_ms_serial:     ${{ secrets.BRANCH1_MS_SERIAL }}
-  # branch1_cw_serial:     ${{ secrets.BRANCH1_CW_SERIAL }}
-  # branch2_mx_serial:     ${{ secrets.BRANCH2_MX_SERIAL }}
-  # branch2_ms_serial:     ${{ secrets.BRANCH2_MS_SERIAL }}
-  # branch2_cw_serial:     ${{ secrets.BRANCH2_CW_SERIAL }}
   org_name:              Org-3665367146726165084
   vpn_hub_network_name:  Datacenter
   branch1_mx_serial:     XXXX-XXXX-XXXX
@@ -59,6 +54,9 @@ env:
   branch2_mx_serial:     XXXX-XXXX-XXXX
   branch2_ms_serial:     XXXX-XXXX-XXXX
   branch2_cw_serial:     XXXX-XXXX-XXXX
+
+  # API Key is stored in GitHub Secrets for security. 
+  # Reference it here to make it available as an environment variable for Terraform and NAC.
   MERAKI_API_KEY:                    ${{ secrets.MERAKI_API_KEY }}
   MERAKI_DASHBOARD_API_KEY:          ${{ secrets.MERAKI_API_KEY }}
 
@@ -207,11 +205,93 @@ jobs:
           restore-keys: |
             terraform-state-
 
+      - name: "🔍 Debug – Environment & Config"
+        run: |
+          echo "═══════════════════════════════════════════════════"
+          echo "  DEBUG: Terraform & Provider Info"
+          echo "═══════════════════════════════════════════════════"
+          terraform version
+          echo ""
+
+          echo "═══════════════════════════════════════════════════"
+          echo "  DEBUG: main.tf contents"
+          echo "═══════════════════════════════════════════════════"
+          cat main.tf
+          echo ""
+
+          echo "═══════════════════════════════════════════════════"
+          echo "  DEBUG: Working directory & data files"
+          echo "═══════════════════════════════════════════════════"
+          echo "PWD: $(pwd)"
+          ls -la
+          echo ""
+          echo "data/ directory:"
+          ls -la data/ 2>/dev/null || echo "⚠️ data/ directory not found!"
+          echo ""
+          echo "workspaces/ directory:"
+          ls -la workspaces/ 2>/dev/null || echo "⚠️ workspaces/ directory not found!"
+          echo ""
+
+          echo "═══════════════════════════════════════════════════"
+          echo "  DEBUG: API Key & Secret Environment Variables"
+          echo "═══════════════════════════════════════════════════"
+          if [ -n "$MERAKI_API_KEY" ]; then
+            echo "✅ MERAKI_API_KEY is SET (length: ${#MERAKI_API_KEY}, first 4 chars: ${MERAKI_API_KEY:0:4}...)"
+          else
+            echo "❌ MERAKI_API_KEY is EMPTY or NOT SET"
+          fi
+
+          if [ -n "$MERAKI_DASHBOARD_API_KEY" ]; then
+            echo "✅ MERAKI_DASHBOARD_API_KEY is SET (length: ${#MERAKI_DASHBOARD_API_KEY}, first 4 chars: ${MERAKI_DASHBOARD_API_KEY:0:4}...)"
+          else
+            echo "❌ MERAKI_DASHBOARD_API_KEY is EMPTY or NOT SET"
+          fi
+
+          if [ -n "$TF_VAR_meraki_api_key" ]; then
+            echo "✅ TF_VAR_meraki_api_key is SET (length: ${#TF_VAR_meraki_api_key})"
+          else
+            echo "❌ TF_VAR_meraki_api_key is EMPTY or NOT SET"
+          fi
+          echo ""
+
+          echo "═══════════════════════════════════════════════════"
+          echo "  DEBUG: NAC !env variables"
+          echo "═══════════════════════════════════════════════════"
+          echo "org_name=$org_name"
+          echo "vpn_hub_network_name=$vpn_hub_network_name"
+          echo "branch1_mx_serial=$branch1_mx_serial"
+          echo "branch1_ms_serial=$branch1_ms_serial"
+          echo "branch1_cw_serial=$branch1_cw_serial"
+          echo "branch2_mx_serial=$branch2_mx_serial"
+          echo "branch2_ms_serial=$branch2_ms_serial"
+          echo "branch2_cw_serial=$branch2_cw_serial"
+          echo ""
+
+          echo "═══════════════════════════════════════════════════"
+          echo "  DEBUG: All env vars containing MERAKI or TF_VAR"
+          echo "═══════════════════════════════════════════════════"
+          env | grep -iE 'MERAKI|TF_VAR|TF_IN' | sed 's/\(.\{4\}\).*/\1****/' || true
+          echo ""
+
+          echo "═══════════════════════════════════════════════════"
+          echo "  DEBUG: Terraform state file"
+          echo "═══════════════════════════════════════════════════"
+          ls -la terraform.tfstate 2>/dev/null && echo "✅ Existing state found ($(wc -c < terraform.tfstate) bytes)" || echo "⚠️ No existing state – fresh deployment"
+          ls -la terraform.tfstate.backup 2>/dev/null && echo "✅ Backup state found" || echo "⚠️ No backup state"
+
+      - name: Terraform init (verbose)
+        run: |
+          echo "═══════════════════════════════════════════════════"
+          echo "  Terraform Init"
+          echo "═══════════════════════════════════════════════════"
+          terraform init -input=false 2>&1
+          echo ""
+          echo "Installed providers:"
+          terraform providers 2>&1 || true
+
       - name: Terraform plan
         run: |
-          ls -la terraform.tfstate 2>/dev/null && echo "✅ Existing state found" || echo "⚠️ No existing state – fresh deployment"
-          terraform init -input=false
-          terraform plan -out=plan.tfplan -input=false
+          terraform plan -out=plan.tfplan -input=false 2>&1
           terraform show -no-color plan.tfplan > plan.txt
           terraform show -json plan.tfplan | jq > plan.json
           echo "✅ Plan completed and stored."
