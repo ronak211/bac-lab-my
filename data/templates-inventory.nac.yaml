@@ -132,7 +132,7 @@ meraki:
                   - uplink
                   - trunk
                 vlan: 1
-                allowed_vlans: 1,10,20,999
+                allowed_vlans: 1,10,20,30,50,999
                 link_negotiation: Auto negotiate
                 udld: Alert only
                 storm_control: true

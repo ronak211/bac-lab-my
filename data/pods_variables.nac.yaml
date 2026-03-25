@@ -29,10 +29,10 @@ meraki:
                 vlan10_appliance_ip: 10.1.10.1
                 vlan20_subnet: 10.1.20.0/24
                 vlan20_appliance_ip: 10.1.20.1
-                # vlan30_subnet: 10.1.30.0/24
-                # vlan30_appliance_ip: 10.1.30.1
-                # vlan50_subnet: 10.1.50.0/24
-                # vlan50_appliance_ip: 10.1.50.1
+                vlan30_subnet: 10.1.30.0/24
+                vlan30_appliance_ip: 10.1.30.1
+                vlan50_subnet: 10.1.50.0/24
+                vlan50_appliance_ip: 10.1.50.1
                 vlan999_subnet: 10.1.255.0/24
                 vlan999_appliance_ip: 10.1.255.1
                 hub_network_name: !env vpn_hub_network_name
@@ -92,10 +92,10 @@ meraki:
                 vlan10_appliance_ip: 10.2.10.1
                 vlan20_subnet: 10.2.20.0/24
                 vlan20_appliance_ip: 10.2.20.1
-                # vlan30_subnet: 10.2.30.0/24
-                # vlan30_appliance_ip: 10.2.30.1
-                # vlan50_subnet: 10.2.50.0/24
-                # vlan50_appliance_ip: 10.2.50.1
+                vlan30_subnet: 10.2.30.0/24
+                vlan30_appliance_ip: 10.2.30.1
+                vlan50_subnet: 10.2.50.0/24
+                vlan50_appliance_ip: 10.2.50.1
                 vlan999_subnet: 10.2.255.0/24
                 vlan999_appliance_ip: 10.2.255.1
                 hub_network_name: !env vpn_hub_network_name
