@@ -28,67 +28,13 @@ env:
   MERAKI_API_KEY:                    ${{ secrets.MERAKI_API_KEY }}
   MERAKI_DASHBOARD_API_KEY:          ${{ secrets.MERAKI_API_KEY }}
 
-  # ── Runner ─────────────────────────────────────────────────────────────
-  # Force Node24 for JavaScript-based actions inside container jobs.
-  # See: https://github.blog/changelog/2025-01-17-github-actions-node-24-support
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────
-  # Job 1 – Prepare: merge data YAML files via the workspaces/ sub-project
-  # ───────────────────────────────────────────────────────────────────────
-  prepare:
-    name: Prepare – Merge Model
-    runs-on: ubuntu-latest
-    container:
-      image: danischm/nac:0.1.6
-      options: --user root
-    timeout-minutes: 60
-    environment: unified-branch-network-as-code
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Load shared env vars
-        run: grep -v '^\s*#' .env | grep -v '^\s*$' >> "$GITHUB_ENV"
-
-      - name: Merge YAML data model
-        working-directory: workspaces
-        run: |
-          echo "📦 Starting merge model process in ./workspaces..."
-          find . ! -name 'main.tf' ! -name '.' -print
-
-          echo "🚀 Running terraform init..."
-          terraform init
-
-          echo "⚙️ Running terraform apply..."
-          terraform apply -auto-approve
-
-          echo "📄 Checking for merged_configuration.nac.yaml..."
-          if [ ! -f merged_configuration.nac.yaml ]; then
-            echo "❌ merged_configuration.nac.yaml not found!"
-            exit 1
-          else
-            echo "✅ merged_configuration.nac.yaml created successfully."
-          fi
-
-          sleep 5
-          ls -lh merged_configuration.nac.yaml
-          chmod 644 merged_configuration.nac.yaml
-
-      - name: Upload merged configuration
-        uses: actions/upload-artifact@v5
-        with:
-          name: merged-config
-          path: workspaces/merged_configuration.nac.yaml
-          retention-days: 7
-
-  # ───────────────────────────────────────────────────────────────────────
-  # Job 2 – Validate: terraform fmt + nac-validate
+  # Job 1 – Validate: terraform fmt + nac-validate
   # ───────────────────────────────────────────────────────────────────────
   validate:
     name: Syntax and Semantics Validation
-    needs: [prepare]
     runs-on: ubuntu-latest
     container:
       image: danischm/nac:0.1.6
@@ -106,12 +52,6 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Download merged configuration
-        uses: actions/download-artifact@v5
-        with:
-          name: merged-config
-          path: workspaces
-
       - name: Terraform format check
         run: |
           echo "🔍 Checking Terraform formatting..."
@@ -123,10 +63,24 @@ jobs:
             echo "✅ All Terraform files are properly formatted."
           fi
 
+      - name: Generate merged configuration
+        run: |
+          echo "📦 Generating merged configuration..."
+          terraform init -input=false
+          terraform apply -auto-approve -input=false -target='module.meraki.module.model.local_sensitive_file.model[0]'
+          echo "📄 Checking for merged_configuration.nac.yaml..."
+          if [ ! -f merged_configuration.nac.yaml ]; then
+            echo "❌ merged_configuration.nac.yaml not found!"
+            exit 1
+          else
+            echo "✅ merged_configuration.nac.yaml generated successfully."
+            ls -lh merged_configuration.nac.yaml
+          fi
+
       - name: NAC validate
         run: |
           echo "🔍 Running nac-validate..."
-          nac-validate ./workspaces/merged_configuration.nac.yaml | tee validate_output.txt
+          nac-validate ./merged_configuration.nac.yaml | tee validate_output.txt
           if grep -q "ERROR" validate_output.txt; then
             echo "❌ nac-validate failed with errors."
             exit 1
@@ -142,10 +96,11 @@ jobs:
           path: |
             fmt_output.txt
             validate_output.txt
+            merged_configuration.nac.yaml
           retention-days: 7
 
   # ───────────────────────────────────────────────────────────────────────
-  # Job 3 – Plan: generate and archive the Terraform plan
+  # Job 2 – Plan: generate and archive the Terraform plan
   # ───────────────────────────────────────────────────────────────────────
   plan:
     name: Plan
@@ -163,16 +118,16 @@ jobs:
       - name: Load shared env vars
         run: grep -v '^\s*#' .env | grep -v '^\s*$' >> "$GITHUB_ENV"
 
+      - name: Download merged configuration
+        uses: actions/download-artifact@v5
+        with:
+          name: validate-outputs
+          path: .
+
       - name: Mark repository as safe for git
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global --add safe.directory "$(pwd)"
-
-      - name: Download merged configuration
-        uses: actions/download-artifact@v5
-        with:
-          name: merged-config
-          path: workspaces
 
       - name: Restore Terraform state cache
         uses: actions/cache/restore@v4
@@ -207,10 +162,6 @@ jobs:
           echo "data/ directory:"
           ls -la data/ 2>/dev/null || echo "⚠️ data/ directory not found!"
           echo ""
-          echo "workspaces/ directory:"
-          ls -la workspaces/ 2>/dev/null || echo "⚠️ workspaces/ directory not found!"
-          echo ""
-
           echo "═══════════════════════════════════════════════════"
           echo "  DEBUG: API Key & Secret Environment Variables"
           echo "═══════════════════════════════════════════════════"
@@ -258,11 +209,13 @@ jobs:
           ls -la terraform.tfstate 2>/dev/null && echo "✅ Existing state found ($(wc -c < terraform.tfstate) bytes)" || echo "⚠️ No existing state – fresh deployment"
           ls -la terraform.tfstate.backup 2>/dev/null && echo "✅ Backup state found" || echo "⚠️ No backup state"
 
-      - name: Terraform init (verbose)
+      - name: Terraform get and init
         run: |
           echo "═══════════════════════════════════════════════════"
-          echo "  Terraform Init"
+          echo "  Terraform Get & Init"
           echo "═══════════════════════════════════════════════════"
+          rm -rf .terraform/modules
+          terraform get -update
           terraform init -input=false 2>&1
           echo ""
           echo "Installed providers:"
@@ -297,7 +250,7 @@ jobs:
           if-no-files-found: ignore
 
   # ───────────────────────────────────────────────────────────────────────
-  # Job 4 – Deploy: apply the saved plan (requires manual approval)
+  # Job 3 – Deploy: apply the saved plan (requires manual approval)
   # ───────────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy
@@ -314,12 +267,6 @@ jobs:
 
       - name: Load shared env vars
         run: grep -v '^\s*#' .env | grep -v '^\s*$' >> "$GITHUB_ENV"
-
-      - name: Download merged configuration
-        uses: actions/download-artifact@v5
-        with:
-          name: merged-config
-          path: workspaces
 
       - name: Download plan
         uses: actions/download-artifact@v5
@@ -367,7 +314,7 @@ jobs:
           terraform destroy -auto-approve -input=false
 
   # ───────────────────────────────────────────────────────────────────────
-  # Job 5a – Idempotency check (runs first after deploy)
+  # Job 4a – Idempotency check (runs first after deploy)
   # ───────────────────────────────────────────────────────────────────────
   idempotency-test:
     name: Idempotency Test
@@ -388,8 +335,8 @@ jobs:
       - name: Download merged configuration
         uses: actions/download-artifact@v5
         with:
-          name: merged-config
-          path: workspaces
+          name: validate-outputs
+          path: .
 
       - name: Download Terraform state
         uses: actions/download-artifact@v5
@@ -427,11 +374,11 @@ jobs:
           retention-days: 7
 
   # ───────────────────────────────────────────────────────────────────────
-  # Job 5b – Integration tests (runs after idempotency check)
+  # Job 4b – Integration tests (runs after idempotency check)
   # ───────────────────────────────────────────────────────────────────────
   integration-test:
     name: Integration Test
-    needs: [idempotency-test]
+    needs: [deploy]
     runs-on: ubuntu-latest
     container:
       image: danischm/nac:0.1.6
@@ -445,16 +392,16 @@ jobs:
       - name: Load shared env vars
         run: grep -v '^\s*#' .env | grep -v '^\s*$' >> "$GITHUB_ENV"
 
+      - name: Download merged configuration
+        uses: actions/download-artifact@v5
+        with:
+          name: validate-outputs
+          path: .
+
       - name: Mark repository as safe for git
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global --add safe.directory "$(pwd)"
-
-      - name: Download merged configuration
-        uses: actions/download-artifact@v5
-        with:
-          name: merged-config
-          path: workspaces
 
       - name: Run integration tests
         id: nac-test
@@ -462,7 +409,7 @@ jobs:
           echo "Delaying integration tests for 60 seconds..."
           sleep 60
           set -o pipefail
-          nac-test -d workspaces/merged_configuration.nac.yaml -t ./tests/templates -o ./tests/results 2>&1 | tee test_output.txt
+          nac-test -d ./merged_configuration.nac.yaml -t ./tests/templates -o ./tests/results 2>&1 | tee test_output.txt
 
       - name: Write Job Summary
         if: always()
@@ -526,7 +473,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────
   failure-cleanup:
     name: Failure Cleanup
-    needs: [prepare, validate, plan, deploy, integration-test, idempotency-test]
+    needs: [validate, plan, deploy, integration-test, idempotency-test]
     if: failure()
     runs-on: ubuntu-latest
     container:

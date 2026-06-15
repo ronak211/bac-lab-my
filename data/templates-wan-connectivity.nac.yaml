@@ -13,12 +13,13 @@
 # ===========================================================================
 #
 meraki:
-  template:
+  templates:
     networks:
-      # Uncomment this template block to enable appliance connectivity monitoring.
-      # - name: appl_comonitoring
-      #   appliance:
-      #     connectivity_monitoring_destinations:
-      #       - ip: "1.1.1.1"
-      #         description: Cloudflare DNS
-      #         default: true
+#       - name: appl_comonitoring
+#         type: model
+#         configuration:
+#           appliance:
+#             connectivity_monitoring_destinations:
+#                    - ip: "1.1.1.1"
+#                      description: Cloudflare DNS
+#                      default: true

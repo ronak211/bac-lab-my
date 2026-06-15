@@ -25,7 +25,6 @@ env:
   TF_IN_AUTOMATION: "true"
   MERAKI_API_KEY:                    ${{ secrets.MERAKI_API_KEY }}
   MERAKI_DASHBOARD_API_KEY:          ${{ secrets.MERAKI_API_KEY }}
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────
@@ -45,11 +44,10 @@ jobs:
           echo "✅ Confirmation accepted – proceeding with destroy."
 
   # ───────────────────────────────────────────────────────────────────────
-  # Job 2 – Prepare: merge data YAML files (needed for terraform to know
-  #         which resources exist)
+  # Job 2 – Destroy Plan: show what will be destroyed before executing
   # ───────────────────────────────────────────────────────────────────────
-  prepare:
-    name: Prepare – Merge Model
+  destroy-plan:
+    name: Destroy Plan
     needs: [confirm]
     runs-on: ubuntu-latest
     container:
@@ -64,50 +62,20 @@ jobs:
       - name: Load shared env vars
         run: grep -v '^\s*#' .env | grep -v '^\s*$' >> "$GITHUB_ENV"
 
-      - name: Merge YAML data model
-        working-directory: workspaces
+      - name: Generate merged configuration
         run: |
-          echo "📦 Merging data model for destroy context..."
-          terraform init
-          terraform apply -auto-approve
-
-          if [ ! -f merged_configuration.nac.yaml ]; then
-            echo "❌ merged_configuration.nac.yaml not found!"
-            exit 1
-          fi
-          chmod 644 merged_configuration.nac.yaml
+          echo "📦 Generating merged YAML data model for destroy context..."
+          terraform init -input=false
+          terraform apply -auto-approve -input=false -target='module.meraki.module.model.local_sensitive_file.model[0]'
+          echo "✅ merged_configuration.nac.yaml created successfully."
+          ls -lh merged_configuration.nac.yaml
 
       - name: Upload merged configuration
         uses: actions/upload-artifact@v5
         with:
           name: merged-config
-          path: workspaces/merged_configuration.nac.yaml
+          path: merged_configuration.nac.yaml
           retention-days: 7
-
-  # ───────────────────────────────────────────────────────────────────────
-  # Job 3 – Destroy Plan: show what will be destroyed before executing
-  # ───────────────────────────────────────────────────────────────────────
-  destroy-plan:
-    name: Destroy Plan
-    needs: [prepare]
-    runs-on: ubuntu-latest
-    container:
-      image: danischm/nac:0.1.6
-      options: --user root
-    timeout-minutes: 60
-    environment: unified-branch-network-as-code
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Load shared env vars
-        run: grep -v '^\s*#' .env | grep -v '^\s*$' >> "$GITHUB_ENV"
-
-      - name: Download merged configuration
-        uses: actions/download-artifact@v5
-        with:
-          name: merged-config
-          path: workspaces
 
       - name: Restore Terraform state cache
         uses: actions/cache/restore@v4
@@ -118,9 +86,6 @@ jobs:
           key: terraform-state-${{ github.ref_name }}
           restore-keys: |
             terraform-state-
-
-      - name: Terraform init
-        run: terraform init -input=false
 
       - name: Terraform destroy plan
         run: |
@@ -159,7 +124,7 @@ jobs:
           if-no-files-found: ignore
 
   # ───────────────────────────────────────────────────────────────────────
-  # Job 4 – Destroy: execute terraform destroy
+  # Job 3 – Destroy: execute terraform destroy
   # ───────────────────────────────────────────────────────────────────────
   destroy:
     name: Destroy
@@ -181,7 +146,7 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: merged-config
-          path: workspaces
+          path: .
 
       - name: Download destroy plan
         uses: actions/download-artifact@v5

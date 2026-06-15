@@ -1,2 +1,12 @@
-tests/templates/__pycache__/meraki_request.cpython-312.pyc
-tests/templates/__pycache__/myutils.cpython-312.pyc
+# Terraform
+.terraform/
+.terraform.lock.hcl
+.terraform*
+terraform*
+
+# Local environment secrets
+.env
+
+# Python bytecode
+**/__pycache__/
+*.pyc

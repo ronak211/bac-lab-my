@@ -37,7 +37,6 @@ permissions:
   actions:  read           # needed to query last successful run time
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   MERAKI_API_KEY:                    ${{ secrets.MERAKI_API_KEY }}
   MERAKI_DASHBOARD_API_KEY:          ${{ secrets.MERAKI_API_KEY }}
 
